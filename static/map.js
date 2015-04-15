@@ -19,6 +19,8 @@ $(function() {
     this.postPlaceFn = extra&&extra.postPlaceFn;
     this.logicFn = extra&&extra.logicFn;
     this.image = extra&&extra.image;
+    this.imageTileWidth = extra&&extra.imageTileWidth||5;
+    this.imageTileHeight = extra&&extra.imageTileHeight||1;
     this.wallSolids = (extra&&extra.wallSolids)|0;
     this.rgb = r | (g<<8) | (b<<16);
     this.opposite = this; // What it switches to when mirrored
@@ -35,7 +37,7 @@ $(function() {
   TileType.prototype.drawOn = function($elem, tile) {
     var styleBgColor = '';
     var styleUrl = 'url("' + (this.image || 'default-skin-v2') + '.png")';
-    var styleBackgroundSize = this.image ? (5*tileSize+'px ' + tileSize + 'px') : (tileSheetWidth*tileSize + 'px ' + tileSheetHeight*tileSize + 'px');
+    var styleBackgroundSize = this.image ? (this.imageTileWidth*tileSize+'px ' + this.imageTileHeight*tileSize + 'px') : (tileSheetWidth*tileSize + 'px ' + tileSheetHeight*tileSize + 'px');
     if (this.name == 'empty') {
       styleBgColor = 'black';
       styleUrl = '';
@@ -443,7 +445,7 @@ $(function() {
     }
   })
 
-  var wire = new Tool({
+var wire = new Tool({
     type: 'special',
     unselect: function() {
       clearHighlights();
@@ -489,6 +491,7 @@ $(function() {
       return new UndoStep(change ? [change] : []);
     }
   });
+
   wire.refreshHighlights = function() {
     clearHighlights();
     if (this.selectedSwitch) {
@@ -713,7 +716,12 @@ $(function() {
   }
   function exportPortal(logic, tile) {
     var dest = tile.destination || tile;
-    logic.portals[tile.x + ',' + tile.y] = {destination: {x: dest.x, y: dest.y}};
+    if (dest.x == tile.x && dest.y == tile.y){
+    logic.portals[tile.x + ',' + tile.y] = {destination: {}};
+    }
+    else{
+    logic.portals[tile.x + ',' + tile.y] = {destination: {x: dest.x, y: dest.y}, cooldown : 0};
+    }
   }
 
   var floorType, emptyType, 
@@ -751,8 +759,10 @@ $(function() {
     blueSpawnType = new TileType('blueSpawn', 15,0, 0,0,155, "Blue Spawn Tile - Blue balls will spawn within a certain radius of this tile."),
     yellowFlagType = new TileType('yellowFlag', 13,1, 128,128,0, "Yellow Flag - Bring this neutral flag to your zone to score."),
     redEndzoneType = new TileType('redEndzone', 14,5, 185,0,0, "Red Endzone - Bring a neutral (yellow) flag to this zone to score."),
-    blueEndzoneType = new TileType('blueEndzone', 15,5, 25,0,148, "Blue Endzone - Bring a neutral (yellow) flag to this zone to score.")
-  ]
+    blueEndzoneType = new TileType('blueEndzone', 15,5, 25,0,148, "Blue Endzone - Bring a neutral (yellow) flag to this zone to score."),
+    gravityWellType = new TileType('gravityWell', 0, 0, 32, 32, 32, "Gravity Well - Pulls nearby balls to their splat.", {image: 'gravitywell', imageTileWidth: 1, imageTileHeight: 1})
+  ];
+
   function areOpposites(t1, t2) {
     t1.opposite = t2;
     t2.opposite = t1; 
@@ -1150,8 +1160,10 @@ $(function() {
         var cell;
         if (tile.type == portalType) {
           cell = {
-            type: tile.type.name,
-            destination: tile.destination ? [tile.destination.x, tile.destination.y] : [x,y]
+            type: tile.type.name}
+          cell[destination] = [tile.destination.x, tile.destination.y];
+          if (tile.destination.x == x && tile.destination.y == y){
+              cell[destination] = "";
           }
         } else if (tile.type == switchType) {
           var targets = [];
@@ -1183,13 +1195,13 @@ $(function() {
   $('#export').click(function() {
     $('.dropArea').removeClass('hasImportable');
     $('.dropArea').addClass('hasExportable');
-    $(jsonDropArea).attr('href', 'data:application/json;base64,' + Base64.encode(JSON.stringify(makeLogic())));
+    $(jsonDropArea).attr('href', 'data:application/json;base64,' + Base64.encode(JSON.stringify(makeLogic(), null, 4)));
     $(pngDropArea).attr('href', getPngBase64Url());
   });
 
   $('#save').click(function() {
     localStorage.setItem('png', getPngBase64Url());
-    localStorage.setItem('json', JSON.stringify(makeLogic()));
+    localStorage.setItem('json', JSON.stringify(makeLogic(), null, 4));
   });
 
   function isValidMapStr() {
@@ -1219,7 +1231,7 @@ $(function() {
       return false;
     }
     var eu = e.target.id == 'testeu' ? true : false;
-    $.post('test', {logic: JSON.stringify(makeLogic()), layout: getPngBase64(), eu: eu}, function(data) {
+    $.post('test', {logic: JSON.stringify(makeLogic(), null, 4), layout: getPngBase64(), eu: eu}, function(data) {
       if (data && data.location) {
         window.open(data.location);
       } else {
@@ -1242,7 +1254,7 @@ $(function() {
 
   var paletteRows = [
     [wallType, wallTopLeftType, wallTopRightType, wallBottomLeftType, wallBottomRightType, floorType, emptyType], 
-    [spikeType, powerupType, portalType],
+    [spikeType, powerupType, portalType, gravityWellType],
     [redFlagType, blueFlagType, redSpawnType, blueSpawnType, redEndzoneType, blueEndzoneType, yellowFlagType, ],
     [speedpadType, redSpeedPadType, blueSpeedpadType, '', '', redFloorType, blueFloorType],
     [switchType, offFieldType, onFieldType, redFieldType, blueFieldType, '', bombType]
@@ -1308,7 +1320,7 @@ $(function() {
 
   jsonDropArea.addEventListener("dragstart",function(evt){
     evt.dataTransfer.setData("DownloadURL",
-      'data:application/json;base64,' + Base64.encode(JSON.stringify(makeLogic())));
+      'data:application/json;base64,' + Base64.encode(JSON.stringify(makeLogic(), null, 4)));
     return false;
   },false);
 
@@ -1401,6 +1413,11 @@ $(function() {
         var tile = (tiles[xy[0]]||[])[xy[1]];
         if (tile && tile.type==portalType) {
           var dest = portals[key].destination||{};
+
+          if (dest.x == xy[0] && dest.y == xy[1]){
+              dest.x = "", dest.y == "";
+          }
+
           tile.destination = (tiles[dest.x]||[])[dest.y];
         }
       }
@@ -1443,7 +1460,7 @@ $(function() {
 
   function resizeTo(width, height, deltaX, deltaY) {
     var png = getPngBase64Url();
-    var json = JSON.stringify(makeLogic());
+    var json = JSON.stringify(makeLogic(), null, " ");
 
     restoreFromPngAndJson(png, json, {width: width, height: height, deltaX: deltaX, deltaY: deltaY});
   }
